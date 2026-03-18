@@ -431,4 +431,80 @@ class ApiService {
       return {'success': false, 'message': 'Network error: $e'};
     }
   }
+
+  // ==================== PAYMENT METHODS ====================
+
+  static Future<Map<String, dynamic>> getOnlinePaymentMethods() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/payment-methods'),
+        headers: await _getHeaders(),
+      );
+
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200) {
+        return {'success': true, 'data': data['data']};
+      } else {
+        return {'success': false, 'message': data['message'] ?? 'Failed to fetch payment methods'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Network error: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> createPaymentMethod(Map<String, dynamic> paymentMethodData) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/payment-methods'),
+        headers: await _getHeaders(),
+        body: jsonEncode(paymentMethodData),
+      );
+
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 201) {
+        return {'success': true, 'data': data['data']};
+      } else {
+        return {'success': false, 'message': data['message'] ?? 'Failed to create payment method'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Network error: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> updatePaymentMethod(String id, Map<String, dynamic> paymentMethodData) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$baseUrl/payment-methods/$id'),
+        headers: await _getHeaders(),
+        body: jsonEncode(paymentMethodData),
+      );
+
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200) {
+        return {'success': true, 'data': data['data']};
+      } else {
+        return {'success': false, 'message': data['message'] ?? 'Failed to update payment method'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Network error: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> deletePaymentMethod(String id) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$baseUrl/payment-methods/$id'),
+        headers: await _getHeaders(),
+      );
+
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200) {
+        return {'success': true, 'message': data['message']};
+      } else {
+        return {'success': false, 'message': data['message'] ?? 'Failed to delete payment method'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Network error: $e'};
+    }
+  }
 }

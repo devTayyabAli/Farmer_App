@@ -26,6 +26,17 @@ class AppTheme {
   static const EdgeInsets defaultMargin = EdgeInsets.only(bottom: 16.0);
   static const double borderRadius = 12.0;
 
+  static String formatDate(dynamic dateStr) {
+    if (dateStr == null || dateStr == 'Full History' || dateStr == 'Other' || dateStr == '' || dateStr == 'All History') return dateStr?.toString() ?? 'N/A';
+    try {
+      final date = DateTime.parse(dateStr.toString());
+      return '${date.day.toString().padLeft(2, '0')}-${date.month.toString().padLeft(2, '0')}-${date.year}';
+    } catch (e) {
+      if (dateStr.toString().contains('-')) return dateStr.toString(); // already formatted or custom
+      return dateStr.toString();
+    }
+  }
+
   // Text Styles
   static const TextStyle heading1 = TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: textPrimary);
   static const TextStyle heading2 = TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: textPrimary);
@@ -117,6 +128,7 @@ class AppTheme {
     ValueChanged<String>? onChanged,
     VoidCallback? onTap,
     bool readOnly = false,
+    double? fontSize,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -142,12 +154,15 @@ class AppTheme {
               ),
             ],
           ),
+          constraints: const BoxConstraints(minHeight: 56),
           child: readOnly
               ? InkWell(
                   onTap: onTap,
                   borderRadius: BorderRadius.circular(borderRadius),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                    constraints: const BoxConstraints(minHeight: 56),
+                    alignment: Alignment.centerLeft,
                     child: Row(
                       children: [
                         if (prefixIcon != null) ...[
@@ -159,7 +174,7 @@ class AppTheme {
                             controller.text.isEmpty ? (hint ?? '') : controller.text,
                             style: TextStyle(
                               color: controller.text.isEmpty ? textTertiary : textPrimary,
-                              fontSize: 16,
+                              fontSize: fontSize ?? 16,
                               fontWeight: readOnly ? FontWeight.w600 : FontWeight.normal,
                             ),
                           ),
@@ -173,15 +188,16 @@ class AppTheme {
                   controller: controller,
                   keyboardType: keyboardType,
                   obscureText: obscureText,
-                  style: const TextStyle(color: textPrimary, fontSize: 16),
+                  style: TextStyle(color: textPrimary, fontSize: fontSize ?? 16),
                   onChanged: onChanged,
                   onTap: onTap,
                   readOnly: readOnly,
                   decoration: InputDecoration(
                     hintText: hint,
-                    hintStyle: const TextStyle(color: textTertiary, fontSize: 14),
+                    hintStyle: const TextStyle(color: Colors.white54, fontSize: 14),
+                    isDense: true,
                     border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
                     prefixIcon: prefixIcon,
                     suffixIcon: suffixIcon,
                   ),
@@ -196,8 +212,9 @@ class AppTheme {
     required String label,
     required T? value,
     required List<DropdownMenuItem<T>> items,
-    required ValueChanged<T?> onChanged,
+    required ValueChanged<T?>? onChanged,
     String? hint,
+    double? fontSize,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -207,7 +224,7 @@ class AppTheme {
           const SizedBox(height: 8),
         ],
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
           decoration: BoxDecoration(
             color: surface,
             borderRadius: BorderRadius.circular(borderRadius),
@@ -220,14 +237,16 @@ class AppTheme {
               ),
             ],
           ),
+          constraints: const BoxConstraints(minHeight: 56),
+          alignment: Alignment.centerLeft,
           child: DropdownButtonHideUnderline(
             child: DropdownButton<T>(
               value: value,
               isExpanded: true,
               dropdownColor: surfaceLight,
               icon: const Icon(Icons.keyboard_arrow_down, color: textSecondary),
-              style: const TextStyle(color: textPrimary, fontSize: 16),
-              hint: hint != null ? Text(hint, style: const TextStyle(color: textTertiary, fontSize: 14)) : null,
+              style: TextStyle(color: textPrimary, fontSize: fontSize ?? 16),
+              hint: hint != null ? Text(hint, style: TextStyle(color: textTertiary, fontSize: fontSize ?? 14)) : null,
               items: items,
               onChanged: onChanged,
             ),
@@ -238,9 +257,10 @@ class AppTheme {
   }
 
   /// Reusable Card Container
-  static Widget buildCard({required Widget child, EdgeInsetsGeometry? padding}) {
+  static Widget buildCard({required Widget child, EdgeInsetsGeometry? padding, EdgeInsetsGeometry? margin}) {
     return Container(
       padding: padding ?? defaultPadding,
+      margin: margin,
       decoration: BoxDecoration(
         color: surface,
         borderRadius: BorderRadius.circular(borderRadius),
