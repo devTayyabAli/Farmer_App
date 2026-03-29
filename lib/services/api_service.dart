@@ -245,6 +245,46 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>> createBroker(String brokerName) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/meta/brokers'),
+        headers: await _getHeaders(),
+        body: jsonEncode({'name': brokerName}),
+      );
+
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        return {'success': true, 'data': data['data']};
+      } else {
+        return {'success': false, 'message': data['message'] ?? data['msg'] ?? 'Failed to create broker'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Network error: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getLastRate(String houseNo, String flockNo) async {
+    try {
+      final String encodedHouse = Uri.encodeComponent(houseNo.trim());
+      final String encodedFlock = Uri.encodeComponent(flockNo.trim());
+      
+      final response = await http.get(
+        Uri.parse('$baseUrl/meta/last-rate?houseNo=$encodedHouse&flockNo=$encodedFlock'),
+        headers: await _getHeaders(),
+      );
+
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200) {
+        return {'success': true, 'data': data};
+      } else {
+        return {'success': false, 'message': data['msg'] ?? 'Failed to fetch last rate'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Network error: $e'};
+    }
+  }
+
   static Future<Map<String, dynamic>> getHouses() async {
     try {
       final response = await http.get(

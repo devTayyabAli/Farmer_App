@@ -480,9 +480,10 @@ class _HomeScreenState extends State<HomeScreen> {
   String _selectedHouse = 'All';
   String _selectedFlock = 'All';
   String _selectedDate = 'All';
+  String _selectedSort = 'Newest'; // Newest, House, Flock
 
   List<dynamic> get _filteredSales {
-    return _recentSales.where((sale) {
+    final filtered = _recentSales.where((sale) {
       bool houseMatch = _selectedHouse == 'All' || (sale['houseNo']?.toString() == _selectedHouse);
       bool flockMatch = _selectedFlock == 'All' || (sale['flockNo']?.toString() == _selectedFlock);
       
@@ -491,6 +492,18 @@ class _HomeScreenState extends State<HomeScreen> {
       
       return houseMatch && flockMatch && dateMatch;
     }).toList();
+
+    // Apply sorting
+    if (_selectedSort == 'House') {
+      filtered.sort((a, b) => (a['houseNo']?.toString() ?? '').compareTo(b['houseNo']?.toString() ?? ''));
+    } else if (_selectedSort == 'Flock') {
+      filtered.sort((a, b) => (a['flockNo']?.toString() ?? '').compareTo(b['flockNo']?.toString() ?? ''));
+    } else {
+      // Default: Newest first (Date desc)
+      filtered.sort((a, b) => (b['date']?.toString() ?? '').compareTo(a['date']?.toString() ?? ''));
+    }
+    
+    return filtered;
   }
 
   String _formatDateSimple(String? dateStr) {
@@ -674,13 +687,20 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ),
                                     const SizedBox(width: 10),
                                     _buildDateFilter(),
-                                    if (_selectedHouse != 'All' || _selectedFlock != 'All' || _selectedDate != 'All') ...[
+                                    _buildFilterDropdown(
+                                      label: "Sort",
+                                      value: _selectedSort,
+                                      options: ['Newest', 'House', 'Flock'],
+                                      onChanged: (val) => setState(() => _selectedSort = val!),
+                                    ),
+                                    if (_selectedHouse != 'All' || _selectedFlock != 'All' || _selectedDate != 'All' || _selectedSort != 'Newest') ...[
                                       const SizedBox(width: 12),
                                       TextButton.icon(
                                         onPressed: () => setState(() {
                                           _selectedHouse = 'All';
                                           _selectedFlock = 'All';
                                           _selectedDate = 'All';
+                                          _selectedSort = 'Newest';
                                         }),
                                         icon: const Icon(Icons.refresh, size: 16, color: Colors.white60),
                                         label: const Text("Clear", style: TextStyle(color: Colors.white70, fontSize: 12)),
@@ -706,16 +726,31 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildDataSummaryCard() {
-    if (_salesSummary.isEmpty) {
-      return AppTheme.buildCard(
-        child: const Center(
-          child: Text('No data available', style: AppTheme.bodyMedium),
-        ),
-      );
+    // Re-calculate summary from filtered sales for 7-day view
+    final Map<String, double> summaryMap = {};
+    final filteredSales = _recentSales.where((sale) {
+      bool houseMatch = _selectedHouse == 'All' || (sale['houseNo']?.toString() == _selectedHouse);
+      bool flockMatch = _selectedFlock == 'All' || (sale['flockNo']?.toString() == _selectedFlock);
+      return houseMatch && flockMatch;
+    }).toList();
+
+    // Group by date (only last 7 days usually)
+    for (var sale in filteredSales) {
+      final d = _formatDateSimple(sale['date']); // Returns DD-MM-YYYY
+      summaryMap[d] = (summaryMap[d] ?? 0) + (sale['netWeight'] ?? 0).toDouble();
     }
 
-    final maxY = _salesSummary.isNotEmpty
-        ? _salesSummary.map((s) => (s['totalWeight'] ?? 0).toDouble()).reduce((a, b) => a > b ? a : b) * 1.2
+    final List<MapEntry<String, double>> chartData = summaryMap.entries.toList();
+    // Sort chronologically and take last 7
+    chartData.sort((a, b) {
+      final da = DateTime.tryParse(a.key.split('-').reversed.join('-')) ?? DateTime(2000);
+      final db = DateTime.tryParse(b.key.split('-').reversed.join('-')) ?? DateTime(2000);
+      return da.compareTo(db);
+    });
+    final limitedChartData = chartData.length > 7 ? chartData.sublist(chartData.length - 7) : chartData;
+
+    final maxY = limitedChartData.isNotEmpty
+        ? limitedChartData.map((e) => e.value).reduce((a, b) => a > b ? a : b) * 1.2
         : 100.0;
 
     return AppTheme.buildCard(
@@ -735,9 +770,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       showTitles: true,
                       getTitlesWidget: (value, meta) {
                         final index = value.toInt();
-                        if (index >= 0 && index < _salesSummary.length) {
-                          final date = _salesSummary[index]['_id']?.toString() ?? '';
-                          final shortDate = date.isNotEmpty ? date.substring(5) : '';
+                        if (index >= 0 && index < limitedChartData.length) {
+                          final date = limitedChartData[index].key;
+                          final shortDate = date.length >= 5 ? date.substring(0, 5) : date;
                           return SideTitleWidget(
                             meta: meta,
                             child: Text(shortDate, style: const TextStyle(color: Colors.white70, fontSize: 10)),
@@ -769,13 +804,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   getDrawingHorizontalLine: (value) => FlLine(color: Colors.white10, strokeWidth: 1),
                 ),
                 borderData: FlBorderData(show: false),
-                barGroups: _salesSummary.asMap().entries.map((entry) {
+                barGroups: limitedChartData.asMap().entries.map((entry) {
                   final isEven = entry.key % 2 == 0;
                   return BarChartGroupData(
                     x: entry.key,
                     barRods: [
                       BarChartRodData(
-                        toY: (entry.value['totalWeight'] ?? 0).toDouble(),
+                        toY: entry.value.value,
                         color: isEven ? const Color(0xFF8B2E8B) : Colors.white70,
                         width: 16,
                         borderRadius: BorderRadius.circular(4),
@@ -980,6 +1015,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 12),
                     Row(
                       children: [
+                        Expanded(child: _buildSaleInfo('House No', sale['houseNo'] ?? 'N/A')),
+                        Expanded(child: _buildSaleInfo('Flock No', sale['flockNo'] ?? 'N/A')),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
                         Expanded(child: _buildSaleInfo('Weight', '${sale['netWeight'] ?? 0}kg')),
                         Expanded(child: _buildSaleInfo('Amount', 'Rs ${sale['totalAmount'] ?? 0}')),
                       ],
@@ -1053,7 +1095,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
 // --- Sale History Details Screen ---
 
-class SaleHistoryDetailsScreen extends StatelessWidget {
+class SaleHistoryDetailsScreen extends StatefulWidget {
   final String date;
   final List<dynamic> sales;
 
@@ -1063,28 +1105,164 @@ class SaleHistoryDetailsScreen extends StatelessWidget {
     required this.sales,
   });
 
-  Widget _buildInfoBadge(String label, String value, IconData icon) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppTheme.surfaceLight,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.primary.withOpacity(0.3)),
+  @override
+  State<SaleHistoryDetailsScreen> createState() => _SaleHistoryDetailsScreenState();
+}
+
+class _SaleHistoryDetailsScreenState extends State<SaleHistoryDetailsScreen> {
+  late List<dynamic> _allSales;
+  late String _selectedDate;
+  String _selectedHouse = 'All';
+  String _selectedFlock = 'All';
+  
+  @override
+  void initState() {
+    super.initState();
+    _allSales = List.from(widget.sales);
+    _selectedDate = widget.date;
+    
+    // If we came from a specific house/flock context (e.g. from Home), initialize those
+    if (widget.sales.isNotEmpty) {
+      final firstHouse = widget.sales.first['houseNo']?.toString();
+      final firstFlock = widget.sales.first['flockNo']?.toString();
+      
+      // Check if all provided sales share the same house/flock
+      bool allSameHouse = widget.sales.every((s) => s['houseNo']?.toString() == firstHouse);
+      bool allSameFlock = widget.sales.every((s) => s['flockNo']?.toString() == firstFlock);
+      
+      if (allSameHouse && firstHouse != null) _selectedHouse = firstHouse;
+      if (allSameFlock && firstFlock != null) _selectedFlock = firstFlock;
+    }
+  }
+
+  List<dynamic> get _filteredSales {
+    return _allSales.where((sale) {
+      bool houseMatch = _selectedHouse == 'All' || (sale['houseNo']?.toString() == _selectedHouse);
+      bool flockMatch = _selectedFlock == 'All' || (sale['flockNo']?.toString() == _selectedFlock);
+      
+      if (_selectedDate == 'All History') return houseMatch && flockMatch;
+      
+      String saleDate = _formatDateSimple(sale['date']);
+      
+      // Handle "Today" and "Yesterday" labels from Home navigation
+      String targetDate = _selectedDate;
+      final now = DateTime.now();
+      final todayStr = '${now.day.toString().padLeft(2, '0')}-${now.month.toString().padLeft(2, '0')}-${now.year}';
+      final yesterday = now.subtract(const Duration(days: 1));
+      final yesterdayStr = '${yesterday.day.toString().padLeft(2, '0')}-${yesterday.month.toString().padLeft(2, '0')}-${yesterday.year}';
+      
+      if (targetDate == 'Today') targetDate = todayStr;
+      if (targetDate == 'Yesterday') targetDate = yesterdayStr;
+      
+      bool dateMatch = saleDate == targetDate;
+      
+      return houseMatch && flockMatch && dateMatch;
+    }).toList();
+  }
+
+  String _formatDateSimple(String? dateStr) {
+    if (dateStr == null) return 'N/A';
+    try {
+      final date = DateTime.tryParse(dateStr);
+      if (date == null) return dateStr;
+      return '${date.day.toString().padLeft(2, '0')}-${date.month.toString().padLeft(2, '0')}-${date.year}';
+    } catch (e) {
+      return dateStr;
+    }
+  }
+
+  List<String> _getUniqueValues(String key) {
+    final values = _allSales.map((s) => s[key]?.toString()).where((v) => v != null && v != 'null').toSet().toList();
+    values.sort();
+    return ['All', ...values.cast<String>()];
+  }
+
+  void _showFilterDialog(String title, String currentVal, List<String> options, Function(String) onSelect) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: Text('Select $title', style: const TextStyle(color: Colors.white)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: options.length,
+            itemBuilder: (context, index) {
+              final val = options[index];
+              return ListTile(
+                title: Text(val, style: TextStyle(color: val == currentVal ? AppTheme.accent : Colors.white70)),
+                onTap: () {
+                  onSelect(val);
+                  Navigator.pop(context);
+                },
+              );
+            },
+          ),
+        ),
       ),
-      child: Row(
-        children: [
-          Icon(icon, color: AppTheme.accent, size: 20),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: const TextStyle(color: AppTheme.textTertiary, fontSize: 11)),
-                Text(value, style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
-              ],
+    );
+  }
+
+  Future<void> _selectDate() async {
+    final DateTime now = DateTime.now();
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(now.year + 5),
+      builder: (context, child) {
+        return Theme(
+          data: AppTheme.darkTheme.copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: AppTheme.primary,
+              onPrimary: Colors.white,
+              surface: Color(0xFF1E1E1E),
+              onSurface: Colors.white,
             ),
           ),
-        ],
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(() {
+        _selectedDate = '${picked.day.toString().padLeft(2, '0')}-${picked.month.toString().padLeft(2, '0')}-${picked.year}';
+      });
+    }
+  }
+
+  Widget _buildInfoBadge(String label, String value, IconData icon, {VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppTheme.surfaceLight,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppTheme.primary.withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: AppTheme.accent, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(label, style: const TextStyle(color: AppTheme.textTertiary, fontSize: 11)),
+                      if (onTap != null) const Icon(Icons.arrow_drop_down, size: 14, color: AppTheme.textTertiary),
+                    ],
+                  ),
+                  Text(value, style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1097,15 +1275,13 @@ class SaleHistoryDetailsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Extract common header data from the first sale
-    final houseNo = sales.isNotEmpty ? (sales.first['houseNo']?.toString() ?? 'N/A') : 'N/A';
-    final flockNo = sales.isNotEmpty ? (sales.first['flockNo']?.toString() ?? 'N/A') : 'N/A';
+    final filteredSales = _filteredSales;
     
-    // Calculate summary
+    // Calculate summary based on filtered sales
     double totalWeight = 0;
     double totalAmount = 0;
     
-    for (var sale in sales) {
+    for (var sale in filteredSales) {
       totalWeight += (sale['netWeight'] ?? 0).toDouble();
       totalAmount += (sale['totalAmount'] ?? 0).toDouble();
     }
@@ -1136,20 +1312,51 @@ class SaleHistoryDetailsScreen extends StatelessWidget {
                       children: [
                         Row(
                           children: [
-                            Expanded(child: _buildInfoBadge('House No', houseNo, Icons.home_work_outlined)),
+                            Expanded(
+                              child: _buildInfoBadge(
+                                'House No', 
+                                _selectedHouse, 
+                                Icons.home_work_outlined,
+                                onTap: () => _showFilterDialog(
+                                  'House No', 
+                                  _selectedHouse, 
+                                  _getUniqueValues('houseNo'), 
+                                  (val) => setState(() => _selectedHouse = val)
+                                ),
+                              )
+                            ),
                             const SizedBox(width: 8),
-                            Expanded(child: _buildInfoBadge('Flock No', flockNo, Icons.pets_outlined)),
+                            Expanded(
+                              child: _buildInfoBadge(
+                                'Flock No', 
+                                _selectedFlock, 
+                                Icons.pets_outlined,
+                                onTap: () => _showFilterDialog(
+                                  'Flock No', 
+                                  _selectedFlock, 
+                                  _getUniqueValues('flockNo'), 
+                                  (val) => setState(() => _selectedFlock = val)
+                                ),
+                              )
+                            ),
                           ],
                         ),
                         const SizedBox(height: 8),
                         Row(
                           children: [
-                            Expanded(child: _buildInfoBadge('Date', date, Icons.calendar_today_outlined)),
+                            Expanded(
+                              child: _buildInfoBadge(
+                                'Date', 
+                                _selectedDate, 
+                                Icons.calendar_today_outlined,
+                                onTap: _selectDate,
+                              )
+                            ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: _buildInfoBadge(
                                 'Vehicles', 
-                                '${sales.length}', 
+                                '${filteredSales.length}', 
                                 Icons.local_shipping_outlined
                               )
                             ),
@@ -1162,7 +1369,7 @@ class SaleHistoryDetailsScreen extends StatelessWidget {
 
                 // 2. FIXED TABLE HEADER BAR
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 10.0),
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
                   margin: const EdgeInsets.symmetric(horizontal: 16.0),
                   decoration: BoxDecoration(
                     color: AppTheme.primary.withOpacity(0.2),
@@ -1171,9 +1378,10 @@ class SaleHistoryDetailsScreen extends StatelessWidget {
                   ),
                   child: Row(
                     children: const [
-                      Expanded(flex: 2, child: Text('Vehicle', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13, fontWeight: FontWeight.bold))),
-                      Expanded(flex: 2, child: Text('Net W', textAlign: TextAlign.center, style: TextStyle(color: AppTheme.textSecondary, fontSize: 13, fontWeight: FontWeight.bold))),
-                      Expanded(flex: 3, child: Text('T. Payment', textAlign: TextAlign.right, style: TextStyle(color: AppTheme.textSecondary, fontSize: 13, fontWeight: FontWeight.bold))),
+                      Expanded(flex: 3, child: Text('Vehicle', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13, fontWeight: FontWeight.bold))),
+                      Expanded(flex: 2, child: Text('House', textAlign: TextAlign.center, style: TextStyle(color: AppTheme.textSecondary, fontSize: 13, fontWeight: FontWeight.bold))),
+                      Expanded(flex: 2, child: Text('Flock', textAlign: TextAlign.center, style: TextStyle(color: AppTheme.textSecondary, fontSize: 13, fontWeight: FontWeight.bold))),
+                      Expanded(flex: 3, child: Text('Payment', textAlign: TextAlign.right, style: TextStyle(color: AppTheme.textSecondary, fontSize: 13, fontWeight: FontWeight.bold))),
                     ],
                   ),
                 ),
@@ -1181,13 +1389,13 @@ class SaleHistoryDetailsScreen extends StatelessWidget {
 
                 // 3. SCROLLABLE INNER DATA (Dynamic middle section)
                 Expanded(
-                  child: sales.isEmpty
+                  child: filteredSales.isEmpty
                       ? const Center(child: Text('No sales found', style: AppTheme.bodyMedium))
                       : ListView.builder(
                           padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
-                          itemCount: sales.length,
+                          itemCount: filteredSales.length,
                           itemBuilder: (context, index) {
-                            final sale = sales[index];
+                            final sale = filteredSales[index];
                             return Container(
                               margin: const EdgeInsets.only(bottom: 8),
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -1199,7 +1407,7 @@ class SaleHistoryDetailsScreen extends StatelessWidget {
                               child: Row(
                                 children: [
                                   Expanded(
-                                    flex: 2, 
+                                    flex: 3, 
                                     child: Text(
                                       sale['vehicleNo']?.toString() ?? 'N/A', 
                                       style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600, fontSize: 13)
@@ -1208,7 +1416,15 @@ class SaleHistoryDetailsScreen extends StatelessWidget {
                                   Expanded(
                                     flex: 2, 
                                     child: Text(
-                                      '${_formatNumber(sale['netWeight'])} kg', 
+                                      '${sale['houseNo'] ?? 'N/A'}', 
+                                      textAlign: TextAlign.center, 
+                                      style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13)
+                                    )
+                                  ),
+                                  Expanded(
+                                    flex: 2, 
+                                    child: Text(
+                                      '${sale['flockNo'] ?? 'N/A'}', 
                                       textAlign: TextAlign.center, 
                                       style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13)
                                     )
@@ -1216,7 +1432,7 @@ class SaleHistoryDetailsScreen extends StatelessWidget {
                                   Expanded(
                                     flex: 3, 
                                     child: Text(
-                                      '${_formatNumber(sale['totalAmount'])} RS', 
+                                      '${_formatNumber(sale['totalAmount'])}', 
                                       textAlign: TextAlign.right, 
                                       style: const TextStyle(color: AppTheme.accent, fontWeight: FontWeight.bold, fontSize: 14)
                                     )
@@ -1382,10 +1598,39 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
       _weight2Controller.text = (w2 == null || w2.toString() == '0' || w2.toString() == '0.0') ? '' : w2.toString();
       
       _rateController.text = data['rate']?.toString() ?? '';
-      // Trigger price load from settings if not provided in data
-      if (data['rate'] == null && data['price'] != null) {
-        _rateController.text = data['price'].toString();
+      _rateController.text = data['rate']?.toString() ?? '';
+      
+      // A pending sale gets created with a placeholder rate from the global "Today's Price".
+      // We should unconditionally try to fetch the exact historical rate for this House and Flock
+      // to overwrite that generic placeholder when the user officially reaches the Finalize screen.
+      if (_selectedHouse != null && _selectedFlock != null && _selectedHouse!.isNotEmpty && _selectedFlock!.isNotEmpty) {
+        _fetchLastRate(_selectedHouse, _selectedFlock);
+      } else {
+        final double currentRateParsed = double.tryParse(_rateController.text) ?? 0.0;
+        if (currentRateParsed == 0 && data['price'] != null) {
+          _rateController.text = data['price'].toString();
+        }
       }
+    }
+  }
+
+  Future<void> _fetchLastRate(String? houseNo, String? flockNo) async {
+    if (houseNo == null || flockNo == null || houseNo.isEmpty || flockNo.isEmpty) return;
+    
+    try {
+      final result = await ApiService.getLastRate(houseNo, flockNo);
+      if (result['success']) {
+        final lastRate = result['data']['rate'];
+        if (lastRate != null && lastRate > 0) {
+          if (mounted) {
+            setState(() {
+              _rateController.text = lastRate.toString();
+            });
+          }
+        }
+      }
+    } catch (e) {
+      print('Error fetching last rate: $e');
     }
   }
 
@@ -1403,12 +1648,21 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
         
         if (mounted) {
           setState(() {
-            _selectedHouse = todaySettings['houseNo']?.toString();
-            _houseController.text = _selectedHouse ?? '';
-            _selectedFlock = todaySettings['flockNo']?.toString();
-            _flockController.text = _selectedFlock ?? '';
-            _priceController.text = todaySettings['price']?.toString() ?? '';
-            _rateController.text = _priceController.text;
+            // Determine if we are creating a new sale vs finalizing an existing one
+            final isFinalizing = widget.initialData != null;
+            
+            if (!isFinalizing) {
+              _selectedHouse = todaySettings['houseNo']?.toString();
+              _houseController.text = _selectedHouse ?? '';
+              _selectedFlock = todaySettings['flockNo']?.toString();
+              _flockController.text = _selectedFlock ?? '';
+              _priceController.text = todaySettings['price']?.toString() ?? '';
+              _rateController.text = _priceController.text;
+            } else {
+              // Ensure we still load today's price just in case, but avoid overwriting House/Flock/Rate defaults!
+              _priceController.text = todaySettings['price']?.toString() ?? '';
+              // Rate is handled individually inside initState for finalizing screens.
+            }
           });
         }
       }
@@ -1852,43 +2106,33 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
-                        child: AppTheme.buildDropdownField<String>(
+                        child: AppTheme.buildEditableDropdown(
                           label: 'House#',
-                          value: _selectedHouse?.isEmpty == true ? null : _selectedHouse,
-                          items: _houseNumbers.map((String house) {
-                            return DropdownMenuItem<String>(
-                              value: house,
-                              child: Text(house),
-                            );
-                          }).toList(),
-                          onChanged: widget.initialData != null ? null : (String? newValue) {
+                          controller: _houseController,
+                          items: _houseNumbers,
+                          onChanged: widget.initialData != null ? (String value) {} : (String newValue) {
                             setState(() {
                               _selectedHouse = newValue;
-                              _houseController.text = newValue ?? '';
                             });
                           },
-                          hint: 'Select',
+                          readOnly: widget.initialData != null,
+                          hint: 'Select or type',
                           fontSize: 13,
                         ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: AppTheme.buildDropdownField<String>(
+                        child: AppTheme.buildEditableDropdown(
                           label: 'Flock#',
-                          value: _selectedFlock?.isEmpty == true ? null : _selectedFlock,
-                          items: _flockNumbers.map((String flock) {
-                            return DropdownMenuItem<String>(
-                              value: flock,
-                              child: Text(flock),
-                            );
-                          }).toList(),
-                          onChanged: widget.initialData != null ? null : (String? newValue) {
+                          controller: _flockController,
+                          items: _flockNumbers,
+                          onChanged: widget.initialData != null ? (String value) {} : (String newValue) {
                             setState(() {
                               _selectedFlock = newValue;
-                              _flockController.text = newValue ?? '';
                             });
                           },
-                          hint: 'Select',
+                          readOnly: widget.initialData != null,
+                          hint: 'Select or type',
                           fontSize: 13,
                         ),
                       ),
@@ -2048,7 +2292,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
             AppTheme.buildTextField(
               label: 'Broker Name',
               controller: _brokerController,
-              hint: 'Enter broker name',
+              hint: 'Optional',
               readOnly: widget.initialData != null,
               onChanged: widget.initialData != null ? null : (value) {
                 print('DEBUG: Broker typing: "$value"');
@@ -2057,13 +2301,19 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
                 final allBrokers = _brokerNames.isNotEmpty ? _brokerNames : 
                   ['John Smith', 'Ahmed Khan', 'Muhammad Ali', 'Sarah Johnson', 'David Brown'];
                 
-                final filtered = value.isEmpty 
+                final List<String> filtered = value.isEmpty 
                   ? <String>[]
                   : allBrokers.where((b) => 
                       b.toLowerCase().contains(value.toLowerCase())
                     ).toList();
                 
-                print('DEBUG: Found ${filtered.length} matches');
+                // If there's text but exactly matching option doesn't exist, append the typed value
+                if (value.isNotEmpty && !allBrokers.any((b) => b.toLowerCase() == value.toLowerCase())) {
+                  // Prepend the new value so it's immediately visible at the top
+                  filtered.insert(0, value);
+                }
+                
+                print('DEBUG: Found ${filtered.length} matches/suggestions');
                 
                 // Update dropdown visibility
                 setDropdownState(() {
@@ -2071,7 +2321,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
                   _showBrokerDropdown = filtered.isNotEmpty;
                 });
               },
-              suffixIcon: const Icon(Icons.person_search, color: AppTheme.primary, size: 20),
+              suffixIcon: widget.initialData != null ? null : const Icon(Icons.person_search, color: AppTheme.primary, size: 20),
             ),
             // Simple dropdown list
             if (_showBrokerDropdown && _filteredBrokers.isNotEmpty)
@@ -2092,12 +2342,33 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
                       dense: true,
                       title: Text(broker, 
                         style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14)),
-                      onTap: () {
+                      onTap: () async {
                         print('DEBUG: Selected: $broker');
                         _brokerController.text = broker;
                         setDropdownState(() {
                           _showBrokerDropdown = false;
                         });
+                        
+                        // If it's a completely new broker not in the official fetched list, save it
+                        if (_brokerNames.isNotEmpty && !_brokerNames.any((b) => b.toLowerCase() == broker.toLowerCase())) {
+                          final result = await ApiService.createBroker(broker);
+                          if (result['success']) {
+                             if (mounted) {
+                               setState(() {
+                                 _brokerNames.add(broker);
+                               });
+                               ScaffoldMessenger.of(context).showSnackBar(
+                                 SnackBar(content: Text('Saved new broker: $broker')),
+                               );
+                             }
+                          } else {
+                             if (mounted) {
+                               ScaffoldMessenger.of(context).showSnackBar(
+                                 SnackBar(content: Text('Warning: ${result['message']}')),
+                               );
+                             }
+                          }
+                        }
                       },
                     );
                   },
@@ -2185,12 +2456,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
       );
       return;
     }
-    if (_brokerController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Broker Name is required')),
-      );
-      return;
-    }
+    /* Removal of broker name required check */
     // Additional validation for finalizing
     if (widget.initialData != null) {
       if (_rateController.text.trim().isEmpty) {
@@ -2672,8 +2938,17 @@ class _ReportsScreenState extends State<ReportsScreen> {
                                     Row(
                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
-                                        Text(sale['vehicleNo'] ?? 'N/A',
-                                            style: const TextStyle(fontWeight: FontWeight.bold)),
+                                        Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(sale['vehicleNo'] ?? 'N/A',
+                                                style: const TextStyle(fontWeight: FontWeight.w900)),
+                                            Text(
+                                              'House: ${sale['houseNo'] ?? 'N/A'} | Flock: ${sale['flockNo'] ?? 'N/A'}',
+                                              style: const TextStyle(color: Colors.white60, fontSize: 11),
+                                            ),
+                                          ],
+                                        ),
                                         Text(_formatDate(sale['date']),
                                             style: const TextStyle(color: Colors.white54)),
                                       ],
@@ -3082,6 +3357,10 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
   Future<pw.Document> _generatePdf(Map<String, dynamic> data) async {
     final pdf = pw.Document();
     final themeColor = PdfColor.fromInt(0xFF8B2E8B); // AppTheme.primary
+    
+    // Fetch current user
+    final user = await AuthService.getUser();
+    final userName = user?['username'] ?? user?['name'] ?? 'FARMER MANAGER';
 
     // Load Logo image
     pw.MemoryImage? logoImage;
@@ -3103,8 +3382,8 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
               // Header with Theme Background
               if (logoImage != null)
                 pw.Container(
-                  width: 50,
-                  height: 50,
+                  width: 120,
+                  height: 120,
                   margin: const pw.EdgeInsets.only(bottom: 5),
                   child: pw.Image(logoImage),
                 ),
@@ -3176,10 +3455,16 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
               pw.SizedBox(height: 8),
               
               // Footer info
-              pw.Text(
-                'Dera Farman Ali Gondal 5 KM, Kotmomin Bhalwal Road, Lilliani, Kotmomin Dist, Sargodha',
-                style: const pw.TextStyle(fontSize: 7),
+              
+              pw.RichText(
                 textAlign: pw.TextAlign.center,
+                text: pw.TextSpan(
+                  style: const pw.TextStyle(fontSize: 7),
+                  children: [
+                    pw.TextSpan(text: 'Head Office: ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                    const pw.TextSpan(text: 'Gondal Protein Farms, B-327, B Block, Pak Arab Housing Scheme, Lahore'),
+                  ],
+                ),
               ),
               pw.SizedBox(height: 4),
               pw.Text(
@@ -3218,7 +3503,7 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
                 decoration: pw.BoxDecoration(color: PdfColors.grey100, borderRadius: pw.BorderRadius.circular(4)),
                 child: pw.Center(
                   child: pw.Text(
-                    'PROCESSED BY FARMER MANAGER',
+                    'PROCESSED BY ${userName.toUpperCase()}',
                     style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700),
                   ),
                 ),
@@ -3754,7 +4039,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
           // Convert to display format: "Account Holder - Bank Name"
           _onlinePaymentMethods = (result['data'] as List)
               .map((method) => '${method['accountHolder']} - ${method['bankName']}')
-              .toList();
+              .toList()
+            ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
         });
       }
     } catch (e) {
@@ -3774,7 +4060,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
     double cash = double.tryParse(_cashController.text.replaceAll(',', '')) ?? 0.0;
     double commission = double.tryParse(_commissionController.text.replaceAll(',', '')) ?? 0.0;
     double totalOnlinePaid = _totalOnlinePaid;
-    return _totalAmount - (_advance + cash + totalOnlinePaid + commission);
+    double result = _totalAmount - (_advance + cash + totalOnlinePaid + commission);
+    return result < 0 ? 0.0 : result;
   }
 
   Future<void> _finalizeReceipt() async {

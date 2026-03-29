@@ -140,10 +140,10 @@ class AppTheme {
         Container(
           width: double.infinity,
           decoration: BoxDecoration(
-            color: readOnly ? surfaceLight : surface,
+            color: surfaceLight,
             borderRadius: BorderRadius.circular(borderRadius),
             border: Border.all(
-              color: readOnly ? primary.withOpacity(0.3) : surfaceLight,
+              color: surfaceLight,
               width: 1.5,
             ),
             boxShadow: [
@@ -226,7 +226,7 @@ class AppTheme {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
           decoration: BoxDecoration(
-            color: surface,
+            color: surfaceLight,
             borderRadius: BorderRadius.circular(borderRadius),
             border: Border.all(color: surfaceLight, width: 1.5),
             boxShadow: [
@@ -256,6 +256,27 @@ class AppTheme {
     );
   }
 
+  /// A modern editable dropdown field layout matching the text field
+  static Widget buildEditableDropdown({
+    required String label,
+    required TextEditingController controller,
+    required List<String> items,
+    required ValueChanged<String> onChanged,
+    String? hint,
+    double? fontSize,
+    bool readOnly = false,
+  }) {
+    return EditableDropdownField(
+      label: label,
+      controller: controller,
+      items: items,
+      onChanged: onChanged,
+      hint: hint,
+      fontSize: fontSize,
+      readOnly: readOnly,
+    );
+  }
+
   /// Reusable Card Container
   static Widget buildCard({required Widget child, EdgeInsetsGeometry? padding, EdgeInsetsGeometry? margin}) {
     return Container(
@@ -276,3 +297,120 @@ class AppTheme {
     );
   }
 }
+
+class EditableDropdownField extends StatefulWidget {
+  final String label;
+  final TextEditingController controller;
+  final List<String> items;
+  final ValueChanged<String> onChanged;
+  final String? hint;
+  final double? fontSize;
+  final bool readOnly;
+
+  const EditableDropdownField({
+    super.key,
+    required this.label,
+    required this.controller,
+    required this.items,
+    required this.onChanged,
+    this.hint,
+    this.fontSize,
+    this.readOnly = false,
+  });
+
+  @override
+  State<EditableDropdownField> createState() => _EditableDropdownFieldState();
+}
+
+class _EditableDropdownFieldState extends State<EditableDropdownField> {
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onTextChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onTextChanged);
+    super.dispose();
+  }
+
+  void _onTextChanged() {
+    widget.onChanged(widget.controller.text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (widget.label.isNotEmpty) ...[
+          Text(widget.label, style: const TextStyle(fontSize: 14, color: AppTheme.textSecondary, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 8),
+        ],
+        Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: AppTheme.surfaceLight,
+            borderRadius: BorderRadius.circular(AppTheme.borderRadius),
+            border: Border.all(
+              color: AppTheme.surfaceLight,
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          constraints: const BoxConstraints(minHeight: 56),
+          child: LayoutBuilder(
+            builder: (context, constraints) => DropdownButtonHideUnderline(
+              child: DropdownMenu<String>(
+                width: constraints.maxWidth,
+                controller: widget.controller,
+                enabled: !widget.readOnly,
+                hintText: widget.hint,
+                textStyle: TextStyle(color: AppTheme.textPrimary, fontSize: widget.fontSize ?? 16),
+                inputDecorationTheme: const InputDecorationTheme(
+                  filled: false,
+                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                  isDense: true,
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                ),
+                menuStyle: MenuStyle(
+                  backgroundColor: MaterialStateProperty.all(AppTheme.surfaceLight),
+                  elevation: MaterialStateProperty.all(4.0),
+                  shape: MaterialStateProperty.all(RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppTheme.borderRadius),
+                    side: BorderSide(color: AppTheme.primary.withOpacity(0.5), width: 1),
+                  )),
+                  maximumSize: MaterialStateProperty.all(const Size.fromHeight(200)),
+                ),
+                dropdownMenuEntries: widget.items.map<DropdownMenuEntry<String>>((String value) {
+                  return DropdownMenuEntry<String>(
+                    value: value,
+                    label: value,
+                    style: MenuItemButton.styleFrom(
+                      foregroundColor: AppTheme.textPrimary,
+                      textStyle: TextStyle(fontSize: widget.fontSize ?? 14),
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                    ),
+                  );
+                }).toList(),
+                onSelected: (String? selection) {
+                  // The _onTextChanged listener will catch this change anyway
+                },
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
