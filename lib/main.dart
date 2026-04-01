@@ -12,6 +12,11 @@ import 'services/auth_service.dart';
 
 import 'theme.dart';
 
+// Utility function to dismiss keyboard
+void dismissKeyboard(BuildContext context) {
+  FocusScope.of(context).unfocus();
+}
+
 void main() {
   runApp(const FarmerApp());
 }
@@ -21,11 +26,17 @@ class FarmerApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Farmer Manager',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
-      home: const SplashScreen(),
+    return GestureDetector(
+      onTap: () {
+        // Dismiss keyboard when tapping outside of input fields
+        FocusScope.of(context).unfocus();
+      },
+      child: MaterialApp(
+        title: 'Farmer Manager',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.darkTheme,
+        home: const SplashScreen(),
+      ),
     );
   }
 }
@@ -298,7 +309,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _isLoading ? null : _login,
+                    onPressed: _isLoading ? null : () {
+                      dismissKeyboard(context);
+                      _login();
+                    },
                     child: _isLoading
                         ? const SizedBox(
                             height: 20,
@@ -2274,6 +2288,7 @@ class _ReceiptScreenState extends State<ReceiptScreen> {
         suffixIcon: widget.initialData != null ? null : IconButton(
           icon: const Icon(Icons.search, color: AppTheme.primary, size: 20),
           onPressed: () {
+            dismissKeyboard(context);
             if (_vehicleController.text.isNotEmpty) {
               _fetchVehicleFromAPI(_vehicleController.text);
             }
@@ -3805,7 +3820,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     width: double.infinity,
                     height: 48,
                     child: ElevatedButton(
-                      onPressed: _isLoading ? null : _saveSettings,
+                      onPressed: _isLoading ? null : () {
+                        dismissKeyboard(context);
+                        _saveSettings();
+                      },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF8B2E8B),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -4178,7 +4196,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
-                              onPressed: _isLoading ? null : _saveNewPaymentMethod,
+                              onPressed: _isLoading ? null : () {
+                                dismissKeyboard(context);
+                                _saveNewPaymentMethod();
+                              },
                               style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary),
                               child: const Text("Save Method"),
                             ),
